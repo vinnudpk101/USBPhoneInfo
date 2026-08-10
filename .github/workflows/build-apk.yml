@@ -36,7 +36,7 @@ jobs:
       - name: Extract Android project
         run: |
           mkdir -p project
-          unzip -q USBPhoneInfo_v3_Technician_Edition.zip -d project
+          unzip -q USBPhoneInfo_v4_Technician_Edition.zip -d project
 
       - name: Find Android project
         run: |
