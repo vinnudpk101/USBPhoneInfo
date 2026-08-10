@@ -3,7 +3,9 @@ name: Build Android APK
 on:
   workflow_dispatch:
   push:
-    branches: ["main", "master"]
+    branches:
+      - main
+      - master
 
 jobs:
   build:
@@ -33,16 +35,32 @@ jobs:
 
       - name: Extract Android project
         run: |
-          mkdir project
+          mkdir -p project
           unzip -q USBPhoneInfo_v3_Technician_Edition.zip -d project
+
+      - name: Find Android project
+        run: |
+          echo "Searching for Gradle project..."
+          find project -maxdepth 4 -name "settings.gradle" -o -name "settings.gradle.kts"
 
       - name: Build APK
         working-directory: project
-        run: gradle assembleDebug --no-daemon
+        run: |
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug --no-daemon
+          else
+            gradle assembleDebug --no-daemon
+          fi
 
-      - name: Upload APK
+      - name: Find APK
+        run: |
+          echo "Searching for APK..."
+          find project -type f -name "*.apk"
+
+      - name: Upload Technician APK
         uses: actions/upload-artifact@v4
         with:
-          name: name: USBPhoneInfo-Technician-v3-APK
-          path: project/app/build/outputs/apk/debug/app-debug.apk
+          name: USBPhoneInfo-Technician-v3-APK
+          path: project/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
