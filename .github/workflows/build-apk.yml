@@ -41,9 +41,9 @@ jobs:
           echo "Searching for Technician Pro ZIP..."
 
           ZIP_FILE="$(find . -maxdepth 3 -type f -iname '*.zip' \
-            -iname '*Technician*Pro*.zip' \
+            \( -iname '*Technician*Pro*.zip' \
             -o -iname '*Technician*.zip' \
-            -o -iname '*USBPhoneInfo*.zip' \
+            -o -iname '*USBPhoneInfo*.zip' \) \
             -print -quit)"
 
           if [ -z "$ZIP_FILE" ]; then
@@ -79,10 +79,128 @@ jobs:
           echo "Searching for Android Gradle project..."
 
           SETTINGS_FILE="$(find project -type f \
-            -name "settings.gradle" -o -name "settings.gradle.kts" \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
             -print -quit)"
 
           if [ -z "$SETTINGS_FILE" ]; then
             echo "ERROR: Android Gradle project not found."
 
-            echo "Searching
+            echo "Searching for Gradle files:"
+            find project -type f \
+              \( -name "build.gradle" \
+              -o -name "build.gradle.kts" \
+              -o -name "settings.gradle" \
+              -o -name "settings.gradle.kts" \) \
+              -print
+
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+
+          echo "Android project found at:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Inspect Android project
+        shell: bash
+        run: |
+          echo "===== PROJECT FILES ====="
+
+          find "$PROJECT_DIR" -maxdepth 5 -type f \
+            \( -name "build.gradle" \
+            -o -name "build.gradle.kts" \
+            -o -name "settings.gradle" \
+            -o -name "settings.gradle.kts" \
+            -o -name "gradlew" \) \
+            -print
+
+          echo "========================="
+
+      - name: Fix Gravity import
+        shell: bash
+        run: |
+          echo "Checking MainActivity files..."
+
+          MAIN_FILE="$(find "$PROJECT_DIR" -type f \
+            \( -name "MainActivity.java" -o -name "MainActivity.kt" \) \
+            -print -quit)"
+
+          if [ -n "$MAIN_FILE" ]; then
+            echo "Found:"
+            echo "$MAIN_FILE"
+
+            if [[ "$MAIN_FILE" == *.java ]]; then
+              sed -i \
+                's/import[[:space:]]\+android\.view\.Gravity;/import android.view.Gravity;/' \
+                "$MAIN_FILE" || true
+            fi
+          else
+            echo "MainActivity not found. Continuing."
+          fi
+
+      - name: Check Gradle wrapper
+        shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          if [ -f "./gradlew" ]; then
+            echo "Gradle wrapper found."
+
+            chmod +x ./gradlew
+
+            echo "Gradle wrapper version:"
+            ./gradlew --version || true
+          else
+            echo "No Gradle wrapper found."
+            echo "Using system Gradle 8.7."
+            gradle --version
+          fi
+
+      - name: Build Technician Pro APK
+        shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          echo "======================================"
+          echo " Building Technician Pro APK"
+          echo "======================================"
+
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          else
+            gradle assembleDebug --no-daemon --stacktrace
+          fi
+
+      - name: Locate APK
+        shell: bash
+        run: |
+          echo "Searching for generated APK..."
+
+          APK_FILE="$(find "$PROJECT_DIR" \
+            -type f \
+            -path "*/build/outputs/apk/debug/*.apk" \
+            -print -quit)"
+
+          if [ -z "$APK_FILE" ]; then
+            echo "ERROR: APK was not generated."
+
+            echo "Searching all APK files:"
+            find "$PROJECT_DIR" -type f -name "*.apk" -print
+
+            exit 1
+          fi
+
+          echo "======================================"
+          echo " APK GENERATED SUCCESSFULLY"
+          echo "======================================"
+          echo "$APK_FILE"
+
+          echo "APK_FILE=$APK_FILE" >> "$GITHUB_ENV"
+
+      - name: Upload Technician Pro APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: USBPhoneInfo-Technician-Pro-APK
+          path: ${{ env.APK_FILE }}
+          if-no-files-found: error
