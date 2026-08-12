@@ -33,18 +33,20 @@ jobs:
         run: |
           yes | sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Extract Technician Edition v4
+      - name: Extract Technician Command Center v5
         run: |
           rm -rf project
-          mkdir project
-          unzip -q USBPhoneInfo_v4_Technician_Edition.zip -d project
+          mkdir -p project
+          unzip -q USBPhoneInfo_v5_Technician_CommandCenter.zip -d project
 
       - name: Find Android project
         run: |
           echo "Searching for Android project..."
-          find project -maxdepth 5 \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -print
+          find project -maxdepth 5 \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -print
 
-      - name: Build Technician Edition v4
+      - name: Build Technician Command Center v5
         working-directory: project
         run: |
           if [ -f "./gradlew" ]; then
@@ -59,9 +61,9 @@ jobs:
           echo "Searching for APK..."
           find project -type f -name "*.apk" -print
 
-      - name: Upload Technician Edition v4 APK
+      - name: Upload Technician Command Center v5 APK
         uses: actions/upload-artifact@v4
         with:
-          name: USBPhoneInfo-Technician-v4-APK
+          name: USBPhoneInfo-Technician-CommandCenter-v5-APK
           path: project/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
