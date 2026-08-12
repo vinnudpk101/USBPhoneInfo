@@ -23,13 +23,16 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.7"
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK components
+        shell: bash
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Find Technician Pro ZIP
@@ -37,19 +40,19 @@ jobs:
         run: |
           echo "Searching for Technician Pro package..."
 
-          ZIP_FILE="$(find . -maxdepth 1 -type f \
-            \( -iname 'USBPhoneInfo_Technician_Pro*.zip' \
-            -o -iname 'USBPhoneInfo_Technician_*.zip' \) \
+          ZIP_FILE="$(find . -maxdepth 5 -type f \
+            \( -iname "*Technician*Pro*.zip" \
+            -o -iname "*Technician_Pro*.zip" \) \
             -print -quit)"
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: Technician ZIP not found."
-            echo "ZIP files in repository:"
-            find . -maxdepth 1 -type f -iname "*.zip" -print
+            echo "ERROR: Technician Pro ZIP not found."
+            echo "Available ZIP files:"
+            find . -type f -name "*.zip" -print
             exit 1
           fi
 
-          echo "Found: $ZIP_FILE"
+          echo "Found package: $ZIP_FILE"
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
       - name: Extract Technician Pro
@@ -57,9 +60,10 @@ jobs:
         run: |
           rm -rf project
           mkdir -p project
+
           unzip -q "$ZIP_FILE" -d project
 
-          echo "Extracted files:"
+          echo "Extracted project:"
           find project -maxdepth 3 -type f | head -100
 
       - name: Locate Android project
@@ -71,7 +75,11 @@ jobs:
 
           if [ -z "$SETTINGS_FILE" ]; then
             echo "ERROR: Android Gradle project not found."
-            find project -maxdepth 5 -type f -print
+            echo "Searching for Gradle files:"
+            find project -type f \
+              \( -name "build.gradle" -o -name "build.gradle.kts" \
+              -o -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+              -print
             exit 1
           fi
 
@@ -82,10 +90,41 @@ jobs:
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Build Technician Pro APK
+      - name: Fix Gravity import
         shell: bash
         run: |
-          cd "$PROJECT_DIR"
+          echo "Searching for MainActivity.java..."
+
+          MAIN_FILE="$(find "$PROJECT_DIR" -type f \
+            -name "MainActivity.java" \
+            -print -quit)"
+
+          if [ -z "$MAIN_FILE" ]; then
+            echo "MainActivity.java not found."
+            echo "Searching for Java source files:"
+            find "$PROJECT_DIR" -type f -name "*.java" -print
+            exit 1
+          fi
+
+          echo "MainActivity found:"
+          echo "$MAIN_FILE"
+
+          if grep -q "^import android.view.Gravity;" "$MAIN_FILE"; then
+            echo "Gravity import already exists."
+          else
+            sed -i '/^package /a import android.view.Gravity;' "$MAIN_FILE"
+            echo "Gravity import added."
+          fi
+
+          echo "Checking Gravity import:"
+          grep -n "android.view.Gravity" "$MAIN_FILE" || true
+
+      - name: Build Technician Pro APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          echo "Building Android project..."
+          echo "Project directory: $PWD"
 
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
@@ -99,8 +138,7 @@ jobs:
         run: |
           echo "Searching for generated APK..."
 
-          APK_FILE="$(find "$PROJECT_DIR" \
-            -type f \
+          APK_FILE="$(find "$PROJECT_DIR" -type f \
             -path "*/build/outputs/apk/debug/*.apk" \
             -print -quit)"
 
