@@ -19,12 +19,13 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
+          cache: gradle
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "9.7"
+          gradle-version: '8.7'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -32,7 +33,7 @@ jobs:
       - name: Install Android SDK components
         shell: bash
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Find Technician Pro ZIP
@@ -40,9 +41,9 @@ jobs:
         run: |
           echo "Searching for Technician Pro package..."
 
-          ZIP_FILE="$(find . -maxdepth 5 -type f \
-            \( -iname "*Technician*Pro*.zip" \
-            -o -iname "*Technician_Pro*.zip" \) \
+          ZIP_FILE="$(find . -maxdepth 2 -type f \
+            \( -iname '*Technician*Pro*.zip' \
+            -o -iname '*USBPhoneInfo*Technician*Pro*.zip' \) \
             -print -quit)"
 
           if [ -z "$ZIP_FILE" ]; then
@@ -52,7 +53,7 @@ jobs:
             exit 1
           fi
 
-          echo "Found package: $ZIP_FILE"
+          echo "Found ZIP: $ZIP_FILE"
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
       - name: Extract Technician Pro
@@ -64,7 +65,7 @@ jobs:
           unzip -q "$ZIP_FILE" -d project
 
           echo "Extracted project:"
-          find project -maxdepth 3 -type f | head -100
+          find project -maxdepth 4 -type f | head -100
 
       - name: Locate Android project
         shell: bash
@@ -75,11 +76,7 @@ jobs:
 
           if [ -z "$SETTINGS_FILE" ]; then
             echo "ERROR: Android Gradle project not found."
-            echo "Searching for Gradle files:"
-            find project -type f \
-              \( -name "build.gradle" -o -name "build.gradle.kts" \
-              -o -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-              -print
+            find project -maxdepth 6 -type f -print
             exit 1
           fi
 
@@ -93,44 +90,46 @@ jobs:
       - name: Fix Gravity import
         shell: bash
         run: |
-          echo "Searching for MainActivity.java..."
+          echo "Checking for Gravity import problem..."
 
-          MAIN_FILE="$(find "$PROJECT_DIR" -type f \
-            -name "MainActivity.java" \
-            -print -quit)"
+          MAIN_FILE="$(find "$PROJECT_DIR" -type f -name "MainActivity.java" -print -quit)"
 
-          if [ -z "$MAIN_FILE" ]; then
-            echo "MainActivity.java not found."
-            echo "Searching for Java source files:"
-            find "$PROJECT_DIR" -type f -name "*.java" -print
-            exit 1
-          fi
+          if [ -n "$MAIN_FILE" ]; then
+            echo "MainActivity found:"
+            echo "$MAIN_FILE"
 
-          echo "MainActivity found:"
-          echo "$MAIN_FILE"
+            sed -i \
+              's/import[[:space:]]\+android\.view\.Gravity;/import android.view.Gravity;/' \
+              "$MAIN_FILE" || true
 
-          if grep -q "^import android.view.Gravity;" "$MAIN_FILE"; then
-            echo "Gravity import already exists."
+            echo "Gravity import check completed."
           else
-            sed -i '/^package /a import android.view.Gravity;' "$MAIN_FILE"
-            echo "Gravity import added."
+            echo "MainActivity.java not found."
           fi
 
-          echo "Checking Gravity import:"
-          grep -n "android.view.Gravity" "$MAIN_FILE" || true
-
-      - name: Build Technician Pro APK
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Show Gradle files
         shell: bash
         run: |
-          echo "Building Android project..."
-          echo "Project directory: $PWD"
+          echo "Gradle files:"
+          find "$PROJECT_DIR" -maxdepth 4 -type f \
+            \( -name "build.gradle" \
+            -o -name "build.gradle.kts" \
+            -o -name "settings.gradle" \
+            -o -name "settings.gradle.kts" \
+            -o -name "gradlew" \) \
+            -print
+
+      - name: Build Technician Pro APK
+        shell: bash
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          echo "Building Technician Pro APK..."
 
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
-            ./gradlew assembleDebug --no-daemon
+            ./gradlew assembleDebug --no-daemon --stacktrace
           else
-            gradle assembleDebug --no-daemon
+            gradle assembleDebug --no-daemon --stacktrace
           fi
 
       - name: Locate APK
@@ -138,7 +137,8 @@ jobs:
         run: |
           echo "Searching for generated APK..."
 
-          APK_FILE="$(find "$PROJECT_DIR" -type f \
+          APK_FILE="$(find "$PROJECT_DIR" \
+            -type f \
             -path "*/build/outputs/apk/debug/*.apk" \
             -print -quit)"
 
