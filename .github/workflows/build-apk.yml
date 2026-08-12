@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Technician Pro APK
 
 on:
   workflow_dispatch:
@@ -23,32 +23,70 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.7"
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK
+      - name: Install Android SDK components
         run: |
-          yes | sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Extract Technician Command Center v5
+      - name: Find Technician Pro ZIP
+        shell: bash
+        run: |
+          echo "Searching for Technician Pro package..."
+
+          ZIP_FILE="$(find . -maxdepth 1 -type f \
+            \( -iname 'USBPhoneInfo_Technician_Pro*.zip' \
+            -o -iname 'USBPhoneInfo_Technician_*.zip' \) \
+            -print -quit)"
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: Technician ZIP not found."
+            echo "ZIP files in repository:"
+            find . -maxdepth 1 -type f -iname "*.zip" -print
+            exit 1
+          fi
+
+          echo "Found: $ZIP_FILE"
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+
+      - name: Extract Technician Pro
+        shell: bash
         run: |
           rm -rf project
           mkdir -p project
-          unzip -q USBPhoneInfo_v5_Technician_CommandCenter.zip -d project
+          unzip -q "$ZIP_FILE" -d project
 
-      - name: Find Android project
+          echo "Extracted files:"
+          find project -maxdepth 3 -type f | head -100
+
+      - name: Locate Android project
+        shell: bash
         run: |
-          echo "Searching for Android project..."
-          find project -maxdepth 5 \
+          SETTINGS_FILE="$(find project -type f \
             \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-            -print
+            -print -quit)"
 
-      - name: Build Technician Command Center v5
-        working-directory: project
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: Android Gradle project not found."
+            find project -maxdepth 5 -type f -print
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+
+          echo "Android project found at:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Build Technician Pro APK
+        shell: bash
         run: |
+          cd "$PROJECT_DIR"
+
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
             ./gradlew assembleDebug --no-daemon
@@ -56,14 +94,30 @@ jobs:
             gradle assembleDebug --no-daemon
           fi
 
-      - name: Find APK
+      - name: Locate APK
+        shell: bash
         run: |
-          echo "Searching for APK..."
-          find project -type f -name "*.apk" -print
+          echo "Searching for generated APK..."
 
-      - name: Upload Technician Command Center v5 APK
+          APK_FILE="$(find "$PROJECT_DIR" \
+            -type f \
+            -path "*/build/outputs/apk/debug/*.apk" \
+            -print -quit)"
+
+          if [ -z "$APK_FILE" ]; then
+            echo "ERROR: APK was not generated."
+            find "$PROJECT_DIR" -type f -name "*.apk" -print
+            exit 1
+          fi
+
+          echo "APK generated:"
+          echo "$APK_FILE"
+
+          echo "APK_FILE=$APK_FILE" >> "$GITHUB_ENV"
+
+      - name: Upload Technician Pro APK
         uses: actions/upload-artifact@v4
         with:
-          name: USBPhoneInfo-Technician-CommandCenter-v5-APK
-          path: project/**/build/outputs/apk/debug/*.apk
+          name: USBPhoneInfo-Technician-Pro-APK
+          path: ${{ env.APK_FILE }}
           if-no-files-found: error
